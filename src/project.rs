@@ -474,8 +474,13 @@ struct ScanNode {
     linked: bool,
 }
 
+/// Dot entries (.git, .vscode) are not mounted, except pesde's package folder, which Rojo projects mount
+fn hidden(entry: &str) -> bool {
+    entry.starts_with('.') && entry != ".pesde"
+}
+
 fn may_be_directory(entry: &str) -> bool {
-    if entry.starts_with('.') {
+    if hidden(entry) {
         return false;
     }
     let lower = entry.to_ascii_lowercase();
@@ -721,7 +726,7 @@ fn ensure_child(state: &mut State, reflection: &Reflection, parent: InstanceId, 
 fn mount_directory(engine: &Engine, node: &ScanNode, instance: InstanceId, mount: &mut MountCounts, relative: &str) {
     for (index, entry) in node.entries.iter().enumerate() {
         let full_path = format!("{}/{entry}", node.path);
-        if entry.starts_with('.') {
+        if hidden(entry) {
             continue;
         }
         if let Some(child_node) = node.dirs.get(entry) {
