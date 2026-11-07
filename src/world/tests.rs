@@ -622,6 +622,11 @@ fn bulk_moves_and_reported_calls() {
         assert(Sound.Playing)
         Sound:Stop()
         game:GetService("SoundService"):PlayLocalSound(Sound)
+        local Player = Instance.new("AudioPlayer")
+        Player:Play()
+        assert(Player.IsPlaying)
+        Player:Stop()
+        assert(not Player.IsPlaying)
         "#,
     );
     let events = events.borrow();
@@ -634,7 +639,7 @@ fn bulk_moves_and_reported_calls() {
             WorldEvent::SoundStopped { .. } => "stop".into(),
         })
         .collect();
-    assert_eq!(kinds, ["emit 7", "emit 16", "clear", "clear", "play false", "stop", "play true"]);
+    assert_eq!(kinds, ["emit 7", "emit 16", "clear", "clear", "play false", "stop", "play true", "play false", "stop"]);
 }
 
 // Rigid assemblies (joints.rs)
