@@ -751,6 +751,12 @@ fn mount_directory_as(engine: &Engine, node: &ScanNode, parent: InstanceId, name
     let reflection = &engine.reflection;
     let full_path = &node.path;
     let present: FxHashMap<String, &String> = node.entries.iter().map(|name| (name.to_ascii_lowercase(), name)).collect();
+    // A directory holding a Rojo project is what the project describes (a Wally or pesde package)
+    if let Some(project) = present.get("default.project.json").and_then(|file| read_json(&format!("{full_path}/{file}"))) {
+        if let Some(tree) = project.get("tree") {
+            return mount_project_node(engine, tree, full_path, parent, name, mount, 0);
+        }
+    }
     let meta = present.get("init.meta.json").and_then(|name| read_json(&format!("{full_path}/{name}")));
     let meta_class = meta.as_ref().and_then(|m| m.get("className")).and_then(|c| c.as_str()).map(str::to_string);
     let mut init = None;
@@ -788,6 +794,54 @@ fn mount_directory_as(engine: &Engine, node: &ScanNode, parent: InstanceId, name
     };
     mount_directory(engine, node, child, mount, relative);
     child
+}
+
+/// A Rojo project node as instance `name` under `parent`: its `$path` (a directory, a file or another
+/// project, `{ "optional": path }` skipped when missing), else an instance of its `$className`, then its
+/// child nodes. Paths are relative to `base`, the project's directory.
+fn mount_project_node(engine: &Engine, node: &serde_json::Value, base: &str, parent: InstanceId, name: &str, mount: &mut MountCounts, depth: usize) -> InstanceId {
+    let reflection = &engine.reflection;
+    let source = match node.get("$path") {
+        Some(serde_json::Value::String(path)) => Some(path.as_str()),
+        Some(serde_json::Value::Object(optional)) => optional.get("optional").and_then(|path| path.as_str()),
+        _ => None,
+    };
+    let source = source.map(|path| normalize(&format!("{base}/{path}")).trim_end_matches('/').to_string()).filter(|path| Path::new(path).exists());
+    let instance = match source {
+        Some(path) if path.to_ascii_lowercase().ends_with(".project.json") && depth < 16 => {
+            let project = read_json(&path);
+            let directory = Path::new(&path).parent().map(|parent| normalize(&parent.to_string_lossy())).unwrap_or_default();
+            match project.as_ref().and_then(|project| project.get("tree")) {
+                Some(tree) => mount_project_node(engine, tree, &directory, parent, name, mount, depth + 1),
+                None => ensure_child(&mut engine.state.borrow_mut(), reflection, parent, name, "Folder", mount),
+            }
+        }
+        Some(path) if Path::new(&path).is_dir() => {
+            let listing = listed(path);
+            let instance = mount_directory_as(engine, &listing, parent, name, mount, "");
+            keep_listing(engine, listing);
+            instance
+        }
+        Some(path) => {
+            let file_name = Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            mount_file(engine, &path, &file_name, Some(name), parent, mount);
+            let found = find_child(&engine.state.borrow(), parent, name);
+            match found {
+                Some(instance) => instance,
+                None => ensure_child(&mut engine.state.borrow_mut(), reflection, parent, name, "Folder", mount),
+            }
+        }
+        None => {
+            let class_name = node.get("$className").and_then(|class| class.as_str()).unwrap_or("Folder");
+            ensure_child(&mut engine.state.borrow_mut(), reflection, parent, name, class_name, mount)
+        }
+    };
+    for (child_name, child) in node.as_object().into_iter().flatten() {
+        if !child_name.starts_with('$') && child.is_object() {
+            mount_project_node(engine, child, base, instance, child_name, mount, depth);
+        }
+    }
+    instance
 }
 
 /// A file entry of a mounted directory (`file_name` its name on disk; `name` overrides the
