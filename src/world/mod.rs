@@ -50,7 +50,7 @@ pub enum WorldEvent {
     Emit { emitter: InstanceId, count: f64, from: Option<Emission> },
     /// `ParticleEmitter:Clear()`, `Trail:Clear()`
     Clear { instance: InstanceId },
-    /// `Sound:Play()` / `:Resume()`, or `SoundService:PlayLocalSound(sound)` (`local`)
+    /// `Sound:Play()` / `:Resume()`, `AudioPlayer:Play()`, or `SoundService:PlayLocalSound(sound)` (`local`)
     SoundPlayed { sound: InstanceId, local: bool },
     /// `Sound:Stop()` / `:Pause()`
     SoundStopped { sound: InstanceId },
@@ -412,6 +412,18 @@ pub fn install(engine: &Rc<Engine>) {
         for (member, on) in [("Play", true), ("Resume", true), ("Stop", false), ("Pause", false)] {
             let Some(member) = name(engine, member) else { continue };
             behaviors.add_method(sound, member, method(move |_, engine, id, _| {
+                super::lua::instance::set_property(engine, id, playing, Value::Bool(on));
+                report(engine, if on { WorldEvent::SoundPlayed { sound: id, local: false } } else { WorldEvent::SoundStopped { sound: id } });
+                Ok(none())
+            }));
+        }
+    }
+
+    // AudioPlayer (the audio API's source): Play / Stop set IsPlaying and report as Sound's do
+    if let (Some(player), Some(playing)) = (reflection.class_id("AudioPlayer"), name(engine, "IsPlaying")) {
+        for (member, on) in [("Play", true), ("Stop", false)] {
+            let Some(member) = name(engine, member) else { continue };
+            behaviors.add_method(player, member, method(move |_, engine, id, _| {
                 super::lua::instance::set_property(engine, id, playing, Value::Bool(on));
                 report(engine, if on { WorldEvent::SoundPlayed { sound: id, local: false } } else { WorldEvent::SoundStopped { sound: id } });
                 Ok(none())
