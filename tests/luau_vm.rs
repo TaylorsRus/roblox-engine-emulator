@@ -233,3 +233,32 @@ fn const_function_declares_a_local_function() -> Result<()> {
     assert_eq!(result, 9);
     Ok(())
 }
+
+/// `f<<T>>(...)` and `object:method<<T>>(...)` name a call's type arguments; the call runs as it would without them.
+#[test]
+fn explicit_type_arguments_are_skipped() -> Result<()> {
+    let lua = Lua::new();
+    let result: String = lua
+        .load(
+            r#"
+            local function identity(Value)
+                return Value
+            end
+            local Box = {}
+            function Box:get(Value)
+                return Value
+            end
+            local Frozen = table.freeze<<{ tag: string }>>({ tag = "a" })
+            local Pair = identity<<number, { [string]: { number } }>>(2)
+            local Method = Box:get<<string>>("b")
+            local Spanning = identity<<{
+                tag: string,
+            }>>("d")
+            return `{Frozen.tag}{Pair}{Method}{if 1 < 2 then "c" else ""}{Spanning}`
+            "#,
+        )
+        .set_name("type_arguments")
+        .eval()?;
+    assert_eq!(result, "a2bcd");
+    Ok(())
+}

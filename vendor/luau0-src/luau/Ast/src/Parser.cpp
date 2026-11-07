@@ -3060,6 +3060,26 @@ AstExpr* Parser::parsePrimaryExpr(bool asStatement)
 
     unsigned int oldRecursionCount = recursionCounter;
 
+    // `f<<T>>(...)` names a call's type arguments, as Roblox's Luau parses it; they only inform type checking, so the
+    // call compiles as `f(...)`. Luau has no `<<` operator, so `<` right after `<` here can only begin them. The callee
+    // spans them, so a call opened on the line they end on is not ambiguous.
+    auto skipTypeInstantiation = [&](AstExpr* callee)
+    {
+        if (lexer.current().type != '<' || lexer.lookahead().type != '<')
+            return;
+        nextLexeme();
+        nextLexeme();
+        parseType();
+        while (lexer.current().type == ',')
+        {
+            nextLexeme();
+            parseType();
+        }
+        expectAndConsume('>', "type instantiation");
+        expectAndConsume('>', "type instantiation");
+        callee->location.end = lexer.previousLocation().end;
+    };
+
     while (true)
     {
         if (lexer.current().type == '.')
@@ -3095,7 +3115,12 @@ AstExpr* Parser::parsePrimaryExpr(bool asStatement)
             Name index = parseIndexName("method name", opPosition);
             AstExpr* func = allocator.alloc<AstExprIndexName>(Location(start, index.location.end), expr, index.name, index.location, opPosition, ':');
 
+            skipTypeInstantiation(func);
             expr = parseFunctionArgs(func, true);
+        }
+        else if (lexer.current().type == '<' && lexer.lookahead().type == '<')
+        {
+            skipTypeInstantiation(expr);
         }
         else if (lexer.current().type == '(')
         {
