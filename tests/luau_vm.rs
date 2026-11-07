@@ -210,3 +210,26 @@ fn an_interpreted_iterator_yields_and_const_declares_a_local() -> Result<()> {
     assert_eq!(result, "1/0 2/2 3/4 4 2");
     Ok(())
 }
+
+/// `const function Name()` declares a local function, as `const Name = value` declares a local; `const` stays usable as a
+/// name.
+#[test]
+fn const_function_declares_a_local_function() -> Result<()> {
+    let lua = Lua::new();
+    let result: i64 = lua
+        .load(
+            r#"
+            const function Double(Value)
+                return Value * 2
+            end
+            local function const(Value)
+                return Value
+            end
+            return Double(4) + const(1)
+            "#,
+        )
+        .set_name("const_function")
+        .eval()?;
+    assert_eq!(result, 9);
+    Ok(())
+}

@@ -415,9 +415,10 @@ AstStat* Parser::parseStat()
     default:;
     }
 
-    // `const Name = ...` declares a local that is never reassigned, as Roblox's Luau parses it; code that runs reassigns
-    // none, so it compiles as `local`
-    if (lexer.current().type == Lexeme::Name && AstName(lexer.current().name) == "const" && lexer.lookahead().type == Lexeme::Name)
+    // `const Name = ...` and `const function Name()` declare locals that are never reassigned, as Roblox's Luau parses
+    // them; code that runs reassigns none, so they compile as `local`
+    if (lexer.current().type == Lexeme::Name && AstName(lexer.current().name) == "const" &&
+        (lexer.lookahead().type == Lexeme::Name || lexer.lookahead().type == Lexeme::ReservedFunction))
         return parseLocal(AstArray<AstAttr*>({nullptr, 0}));
 
     Location start = lexer.current().location;
