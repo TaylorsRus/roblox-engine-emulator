@@ -954,7 +954,7 @@ pub fn mount_at(engine: &Engine, spec: &Mount) -> Result<MountCounts, String> {
                 keep_listing(engine, node);
             } else {
                 let Some(last) = last else {
-                    return Err(format!("{service_name}={path}: a file cannot be mounted as a service"));
+                    return mount_model_as_service(engine, &path, service, &mut mount).map(|()| mount);
                 };
                 let file_name = Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 mount_file(engine, &path, &file_name, Some(last), parent, &mut mount);
@@ -962,6 +962,29 @@ pub fn mount_at(engine: &Engine, spec: &Mount) -> Result<MountCounts, String> {
         }
     }
     Ok(mount)
+}
+
+/// A model file as a service, as Rojo makes a service from one: the model's top instance stands for the
+/// service, so its children become the service's
+fn mount_model_as_service(engine: &Engine, path: &str, service: InstanceId, mount: &mut MountCounts) -> Result<(), String> {
+    let lower = path.to_ascii_lowercase();
+    if !(lower.ends_with(".rbxm") || lower.ends_with(".rbxmx")) {
+        return Err(format!("{path}: only a model file can be mounted as a service"));
+    }
+    let Some(plan) = mounted_plan(engine, path) else {
+        mount.skipped += 1;
+        return Ok(());
+    };
+    let created = plan.instantiate(engine, Some(service));
+    let mut state = engine.state.borrow_mut();
+    for top in created {
+        for child in state.dom.children_of(top).to_vec() {
+            state.dom.detach(child);
+            state.dom.attach(child, service);
+        }
+        state.dom.detach(top);
+    }
+    Ok(())
 }
 
 /// The contents of directory `path` mounted as the children of `instance`, as a mounted root's
